@@ -157,8 +157,8 @@ def spatial_seir(params):
                 inf += 1
         return inf
 
-    ########################################
-
+    # debugging ############################
+    """
     @ti.kernel
     def tx0(t: ti.i32):
         # zero out the f_contagion array
@@ -198,10 +198,7 @@ def spatial_seir(params):
         for i, j in f_transfer:
             f_axis_sums[i] += f_transfer[i, j]
         for i in f_axis_sums:
-            if f_axis_sums[i] <= f_contagion[i]:
-                f_contagion[i] = f_contagion[i] - f_axis_sums[i]
-            else:
-                f_contagion[i] = ti.u32(0xDEADBEEF)
+            f_contagion[i] = f_contagion[i] - f_axis_sums[i]
 
     @ti.kernel
     def tx5(t: ti.i32):
@@ -233,7 +230,7 @@ def spatial_seir(params):
                 if duration <= 0:
                     duration = 1
                 f_etimers[i] = ti.cast(duration, ti.u8)
-
+    """
     ########################################
 
     @ti.kernel
@@ -257,7 +254,7 @@ def spatial_seir(params):
         for i in f_axis_sums:
             f_axis_sums[i] = 0
         for i, j in f_transfer:
-            f_axis_sums[i] += f_transfer[i, j]
+            f_axis_sums[j] += f_transfer[i, j]
         for i in f_axis_sums:
             f_contagion[i] = f_contagion[i] + f_axis_sums[i]
 
@@ -265,7 +262,7 @@ def spatial_seir(params):
         for i in f_axis_sums:
             f_axis_sums[i] = 0
         for i, j in f_transfer:
-            f_axis_sums[j] += f_transfer[i, j]
+            f_axis_sums[i] += f_transfer[i, j]
         for i in f_axis_sums:
             f_contagion[i] = f_contagion[i] - f_axis_sums[i]
 
@@ -274,17 +271,17 @@ def spatial_seir(params):
             f_history[t, i] = f_contagion[i]
 
         # multiply contagion by beta
-        for i in f_contagion:
-            f_contagion[i] = ti.cast(f_contagion[i] * params.beta, ti.u32)
+        for i in f_forces:
+            f_forces[i] = params.beta * f_contagion[i]
 
         # divide node contagion by node population
-        for i in f_contagion:
-            f_contagion[i] = ti.cast(f_contagion[i] / f_node_populations[i], ti.u32)
+        for i in f_forces:
+            f_forces[i] = f_forces[i] / f_node_populations[i]
 
         # visit each individual determining transmision by node force of infection and individual susceptibility
         for i in f_susceptibility:
             if ti.random() < (
-                f_contagion[ti.cast(f_nodeids[i], ti.i32)] * f_susceptibility[i]
+                f_forces[ti.cast(f_nodeids[i], ti.i32)] * f_susceptibility[i]
             ):
                 f_susceptibility[i] = ti.cast(0, ti.u8)
                 duration = ti.round(ti.randn() * params.inc_std + params.inc_mean)
@@ -324,24 +321,18 @@ def spatial_seir(params):
         inf_update()
         inc_update()
 
-        # _c = np.zeros(num_pops, dtype=np.uint32)
-        # np.add.at(_c, nodeid_np[f_itimers.to_numpy() != 0], 1)
-        # _t = (_c * network_np).round().astype(np.uint32)
-        # print(f"{_t.sum(axis=1)}")
-        # print(f"{_t.sum(axis=0)}")
-
-        # transmission(t)
-        tx0(t)  # zero out the f_contagion array
-        tx1(t)  # accumulate contagion for each node (into f_contagion[f_nodeids])
-        tx2(t)  # multiple accumulated contagion by the network (into f_transfer)
-        tx3(t)  # accumulate across rows for incoming contagion (into f_contagion)
-        tx4(t)  # accumulate down columns for outgoing contagion (out of f_contagion)
-        tx5(t)  # record total contagion for each node (into f_history[t,:])
-        tx6(t)  # multiply contagion by beta (into f_forces)
-        tx7(t)  # divide node contagion by node population (in f_forces)
-        tx8(
-            t
-        )  # visit each individual determining transmision by node force of infection and individual susceptibility
+        transmission(t)
+        # tx0(t)  # zero out the f_contagion array
+        # tx1(t)  # accumulate contagion for each node (into f_contagion[f_nodeids])
+        # tx2(t)  # multiple accumulated contagion by the network (into f_transfer)
+        # tx3(t)  # accumulate across rows for incoming contagion (into f_contagion)
+        # tx4(t)  # accumulate down columns for outgoing contagion (out of f_contagion)
+        # tx5(t)  # record total contagion for each node (into f_history[t,:])
+        # tx6(t)  # multiply contagion by beta (into f_forces)
+        # tx7(t)  # divide node contagion by node population (in f_forces)
+        # tx8(
+        #     t
+        # )  # visit each individual determining transmision by node force of infection and individual susceptibility
         record(t + 1)
         ti.sync()
 
